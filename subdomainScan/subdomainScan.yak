@@ -1,0 +1,401 @@
+SPACE = str.ToUpper(str.TrimSpace(cli.String("space-engine")))
+Apikey = cli.String("api-key")
+ApiAccount = cli.String("api-account")
+FetchPage = cli.Int("fetch-page", cli.setDefault(1))
+FetchSize = cli.Int("fetch-size", cli.setDefault(30))
+APIkeyFieldName = f`BATCH_HACK_${SPACE}_APIKEY`
+APIAccountFieldName = f`BATCH_HACK_${SPACE}_USERNAME`
+saveApiKey = !cli.Have("no-save-api-key")
+query = cli.String("query")
+Isengine = cli.Bool("Isengine")
+Target = cli.String("Target")
+Dictionary = cli.String("Dictionary")
+DNSServer = cli.String("DNSServer")
+AliveURLRESULT = cli.String("AliveURLRESULT")
+yakit.EnableTable("子域名扫描结果", ["域名", "子域名", "IP"])
+URLRESULT = "D:/result.txt"
+
+results := make(chan string, 100)
+maxLines = 1
+Lock = sync.NewLock()
+swg := sync.NewSizedWaitGroup(20)
+
+outputData = def(domin, subdomin, IP) {
+    data = make(map[string]var)
+    data["域名"] = domin
+    data["子域名"] = subdomin
+    data["IP"] = IP
+    yakit.Output(yakit.TableData("子域名扫描结果", data))
+}
+func engine_Get(Isengine, SPACE, query, Apikey, ApiAccount, FetchPage, FetchSize, APIkeyFieldName, APIAccountFieldName, 
+                saveApiKey, FileSavePath) {
+    if Isengine == false {
+        return 0
+    }
+    
+    Reachable = 0
+    f, err := file.Open(FileSavePath)
+    // 处理查询语句
+    if query == "" {
+        yakit.Error(f"{SPACE} 查询语句为空")
+        return
+    }
+    
+    if saveApiKey {
+        yakit.Info(f"自动保存 ${SPACE} APIKey ")
+        db.SetKey(APIkeyFieldName, Apikey)
+        db.SetKey(APIAccountFieldName, ApiAccount)
+    }
+    
+    if Apikey == "" {
+        Apikey = db.GetKey(APIkeyFieldName)
+    }
+    
+    if ApiAccount == "" {
+        ApiAccount = db.GetKey(APIAccountFieldName)
+    }
+    
+    if SPACE == "FOFA" || SPACE == "HUNTER" {
+        if ApiAccount == "" {
+            yakit.Info(f"${SPACE} APIAccount 为空")
+            return
+        }
+        
+    }
+    
+    if Apikey == "" {
+        yakit.Info(f"${SPACE} APIKey 为空")
+        return
+    }
+    
+    switch SPACE {
+case "FOFA":
+        res, err := spacengine.FofaQuery(ApiAccount, Apikey, query, spacengine.maxPage(FetchPage), 
+                                     spacengine.maxRecord(FetchSize))
+        //yakit.Info("res"+res)
+        if err != nil {
+            yakit.Error(f"${SPACE}搜索出错%v", err)
+            return
+        }
+        
+
+        for r := range res {
+            Reachable++
+            f.WriteLine(r.Addr)
+        }
+        
+case "HUNTER":
+        res, err := spacengine.HunterQuery(ApiAccount, Apikey, query, spacengine.maxPage(FetchPage), 
+                                           spacengine.maxRecord(FetchSize))
+        //yakit.Info("res"+res)
+        if err != nil {
+            yakit.Error("fofa搜索出错%v", err)
+            return
+        }
+        
+
+        for r := range res {
+            Reachable++
+            f.WriteLine(r.Addr)
+        }
+        
+case "ZOOMEYE":
+        res, err := spacengine.ZoomeyeQuery(Apikey, query, spacengine.maxPage(FetchPage), spacengine.maxRecord(FetchSize))
+        //yakit.Info("res"+res)
+        if err != nil {
+            yakit.Error(f"${SPACE}搜索出错%v", err)
+            return
+        }
+        
+
+        for r := range res {
+            Reachable++
+            f.WriteLine(r.Addr)
+        }
+        
+case "SHODAN":
+        res, err := spacengine.ShodanQuery(Apikey, query, spacengine.maxPage(FetchPage), spacengine.maxRecord(FetchSize))
+        //yakit.Info("res"+res)
+        if err != nil {
+            yakit.Error(f"${SPACE}搜索出错%v", err)
+            return
+        }
+        
+
+        for r := range res {
+            Reachable++
+            f.WriteLine(r.Addr)
+        }
+        
+case "QUAKE":
+        res, err := spacengine.QuakeQuery(Apikey, query, spacengine.maxPage(FetchPage), spacengine.maxRecord(FetchSize))
+        //yakit.Info("res"+res)
+        if err != nil {
+            yakit.Error(f"${SPACE}搜索出错%v", err)
+            return
+        }
+        
+
+        for r := range res {
+            Reachable++
+            f.WriteLine(r.Addr)
+        }
+        
+default:
+        yakit.Info("不匹配的空间引擎类型:%s", SPACE)
+        return
+}
+    
+    defer f.Close()
+
+    return Reachable
+}
+
+func RemoveRepeat(TargetPath) {
+    s = str.RemoveRepeat(file.ReadLines(TargetPath))
+
+    Removefile, err := file.OpenFile(TargetPath, file.O_WRONLY | file.O_TRUNC | file.O_CREATE, 0666)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    
+    defer Removefile.Close()
+
+    Removefile.WriteLine(s)
+}
+
+func DnsServerAttack(file, Target, Server) {
+    res, err := subdomain.Scan(Target, subdomain.recursive(false), subdomain.maxDepth(1), subdomain.workerConcurrent(100), 
+                            subdomain.wildcardToStop(false), subdomain.eachQueryTimeout(0.3), subdomain.dnsServer(Server))
+    die(err)
+
+    for result := range res {
+        file.WriteLine(str.ParseStringToHosts(result.Domain))
+    }
+    
+}
+func DnsAttack(file, Target) {
+    res, err := subdomain.Scan(Target, subdomain.recursive(false), subdomain.maxDepth(1), subdomain.workerConcurrent(100), 
+                            subdomain.wildcardToStop(false), subdomain.eachQueryTimeout(0.3))
+    die(err)
+
+    for result := range res {
+        file.WriteLine(str.ParseStringToHosts(result.Domain))
+    }
+    
+}
+func subtargets_get(Dictionary, TargetURL) {
+    subtargets = make([]string)
+    for _, dict = range str.SplitAndTrim(Dictionary, ",") {
+        fileRaw = io.ReadFile(dict)[0]
+        if len(fileRaw) <= 0 {
+            yakit.Error("加载文件失败：%v", dict)
+            continue
+        }
+        
+        lines = str.ParseStringToLines(string(fileRaw))
+        for _, sub := range lines {
+            subtargets = append(subtargets, sub + "." + TargetURL)
+        }
+        
+    }
+    
+    return subtargets
+}
+func writeToFile(file, lines) {
+    writer, _ := bufio.NewWriter(file)
+    defer writer.Flush
+
+    for _, line := range lines {
+        println(str.ParseStringToHosts(line))
+        file.Write(line + '\n')
+    }
+    
+}
+func AliveTask(addr) {
+    urls := str.ParseStringToUrls(addr)
+    swg.Add()
+    go func {
+        defer swg.Done()
+
+
+        for _, u := range urls {
+            rsp, err := http.Get(u, http.timeout(1))
+            if err != nil {
+                log.error("request %v failed: %s", u, err)
+                continue
+            }
+            
+            if rsp.StatusCode == 200 || rsp.StatusCode == 302 {
+                results <- u
+            }
+            
+        }
+        
+    }
+}
+Alivefile, err := file.Open(AliveURLRESULT)
+if err != nil {
+    fmt.Println(err)
+    return
+}
+
+defer Alivefile.Close()
+
+go func() {
+    writer, _ := bufio.NewWriter(Alivefile)
+    defer writer.Flush
+
+    buffer := make([]string, maxLines)
+    count := 0
+    for r := range results {
+        Lock.Lock
+        buffer[count] = r
+        count++
+        if count == maxLines {
+            writeToFile(Alivefile, buffer)
+            count = 0
+        }
+        
+        Lock.Unlock
+    }
+    
+
+    if count > 0 {
+        writeToFile(Alivefile, buffer[:count])
+    }
+    
+}()
+
+func FileAliveString(path) {
+    lines = make([]string)
+    for _, dict = range str.SplitAndTrim(path, ",") {
+        fileRaw = io.ReadFile(dict)[0]
+        if len(fileRaw) <= 0 {
+            yakit.Error(
+                "%v为空，无存活，请检查网络配置", 
+                dict, 
+            )
+            continue
+        }
+        
+        lines = str.ParseStringToLines(string(fileRaw))
+    }
+    
+    return lines
+}
+func FileString(path) {
+    lines = make([]string)
+    for _, dict = range str.SplitAndTrim(path, ",") {
+        fileRaw = io.ReadFile(dict)[0]
+        if len(fileRaw) <= 0 {
+            yakit.Error("加载文件失败：%v", dict)
+            continue
+        }
+        
+        lines = str.ParseStringToLines(string(fileRaw))
+    }
+    
+    return lines
+}
+func submitTask(addr) {
+    urls := str.ParseStringToUrls(addr)
+    swg.Add()
+    go func {
+        defer swg.Done()
+
+
+        for _, u := range urls {
+            rsp, err := http.Get(u, http.useragent(http.uarand()))
+            if err != nil {
+                log.error("request %v failed: %s", u, err)
+                continue
+            }
+            
+            if rsp.StatusCode == 200 || rsp.StatusCode == 302 {
+                println(u)
+                results <- u
+            }
+            
+        }
+        
+    }
+}
+IPfile, err := file.Open(URLRESULT)
+if err != nil {
+    fmt.Println(err)
+    return
+}
+
+defer IPfile.Close()
+
+go func() {
+    writer, _ := bufio.NewWriter(IPfile)
+    defer writer.Flush
+
+    buffer := make([]string, maxLines)
+    count := 0
+    for r := range results {
+        Lock.Lock
+        buffer[count] = r
+        count++
+        if count == maxLines {
+            writeToFile(IPfile, buffer)
+            count = 0
+        }
+        
+        Lock.Unlock
+    }
+    
+
+    if count > 0 {
+        writeToFile(IPfile, buffer[:count])
+    }
+    
+}()
+
+
+func Alivetest() {
+    subtargets = FileString(URLRESULT)
+    for _, subtarget := range subtargets {
+        AliveTask(subtarget)
+    }
+    
+    RemoveRepeat(AliveURLRESULT)
+    lessdomins = FileAliveString(AliveURLRESULT)
+    for _, lessdomin := range lessdomins {
+        targetIP = str.ExtractHost(lessdomin)
+        ip = dns.QueryIP(targetIP)
+        outputData(Target, lessdomin, ip)
+    }
+    
+}
+
+risk = engine_Get(Isengine, SPACE, query, Apikey, ApiAccount, FetchPage, FetchSize, APIkeyFieldName, APIAccountFieldName, 
+                 saveApiKey, URLRESULT)//Api是否写入同时判断阈值//Api是否写入同时判断阈值
+
+if file.IsFile(Target) {
+    for _, TargetAttack := range FileString(URLRESULT) {
+        for _, subtarget := range subtargets_get(Dictionary, TargetAttack) {
+            submitTask(subtarget)
+        }
+        
+    }
+    
+} else {
+    for _, subtarget := range subtargets_get(Dictionary, Target) {
+        submitTask(subtarget)
+    }
+    
+}
+
+swg.Wait()
+if DNSServer == "null" {
+    DnsAttack(IPfile, Target)//dns枚举,没使用用户自定的dnsserver    //dns枚举,没使用用户自定的dnsserver
+} else {
+    DnsServerAttack(IPfile, Target, DNSServer)//dns枚举,使用用户自定的dnsserver    //dns枚举,使用用户自定的dnsserver
+}
+
+RemoveRepeat(URLRESULT)//去重//去重
+Alivetest()//测活输出
