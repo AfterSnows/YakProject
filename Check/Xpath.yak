@@ -1,0 +1,143 @@
+yakit.AutoInitYakit()
+generateIntCastCheckingExpr = func(i) {
+    expr = f`']|//*|//*['`
+    return expr
+}
+
+xpathPayloads = func() {
+    // base
+    var payloads = []
+
+
+    var results = []
+        realPayload = str.Join(payloads, ",")
+        realPayload = sprintf("%v", realPayload)
+        results.Push(realPayload)
+    return results
+}
+
+xpathInjectionChecking = func(https, request) {
+    freq = fuzz.HTTPRequest(request, fuzz.https(https))~
+    params = freq.GetGetQueryParams()
+    params.Push(freq.GetPostJsonParams()...)
+    params.Push(freq.GetPostJsonParams()...)
+    url = str.ExtractURLFromHTTPRequestRaw(request, https)~.String()
+    yakit.Info("准备对 %v 进行 xpath 注入检查", url)
+
+    if len(params) <= 0 {
+        return 
+    }
+
+    info = i => {
+        yakit.Info("检测URL: %v - %v", url, i)
+    }
+
+    /* 修正相似度阈值 */
+    similarityMax = 0.98
+    originRsp = freq.ExecFirst()~
+    sleep(1)
+    originRspFix = freq.ExecFirst()~
+    similarityMaxFix = str.CalcSimilarity(originRsp.ResponseRaw, originRspFix.ResponseRaw)
+    if similarityMaxFix > similarityMax {
+        similarityMax = similarityMaxFix
+        info("相似度阈值修正为 " + sprint(similarityMax))
+    }
+
+    /* 开始根据参数进行检测 */
+    for i in params {
+        paramName = i.Name()
+        paramValue = freq.GetQueryValue(paramName)
+        info(f`参数名：${paramName} 参数值: ${paramValue}`)
+        pureInt = str.MatchAllOfRegexp(paramValue, `\d+`)
+
+        prefix = []
+        suffix = [" ' ", " \" ","']|//*|//*['"]
+        if pureInt {
+            expr = generateIntCastCheckingExpr(paramValue)
+            info("开始进行数值检测: " + expr)
+
+            rsp, err := i.Fuzz(expr).ExecFirst()
+            if err != nil { yakit.Error(err) }
+            if rsp == nil {
+                continue
+            }
+
+            rspN, err := i.Fuzz(generateIntCastCheckingExpr(paramValue) + "+2").ExecFirst()
+            if err != nil { yakit.Error(err) }
+            if rsp == nil {
+                continue
+            }
+
+            info("开始计算数值检测相似度")
+            similarity = str.CalcSimilarity(originRsp.ResponseRaw, rsp.ResponseRaw)
+            info("正向数值检测相似度: " + sprint(similarity))
+            similarityN = str.CalcSimilarity(originRsp.ResponseRaw, rspN.ResponseRaw)
+            info("逆向数值检测相似度: " + sprint(similarityN))
+            if similarity >= similarityMax && similarityN < similarityMax {
+                info("大概率进行了数值运算")
+                posVerbose = i.PositionVerbose()
+                risk.NewRisk(
+                    url, 
+                    risk.titleVerbose(f"参数[${paramName}](${posVerbose})潜在数值运算：${url}"),    
+                    risk.title(f"Param:[${paramName}](${posVerbose}) Calc(${expr}) With：${url}"),
+                    
+                )
+            }
+            prefix.Push(" ", "/**/")
+            prefix.Push(sprint(paramValue) + " ")
+            prefix.Push(sprint(paramValue) + "/**/")
+        } else {
+            info("开始进行字符串检测")
+            prefix.Push("'", "')")
+            prefix.Push(sprint(paramValue) + "'")
+            prefix.Push(sprint(paramValue) + "')")
+            prefix.Push(sprint(randstr(10)) + "'")
+            prefix.Push(sprint(randstr(10)) + "')")
+        }
+
+        payloads = xpathPayloads()
+        token = "xmlXPathEval"
+        info("TOKEN 为 " + sprint(token))
+
+        var finished = false
+
+        for p in prefix {
+            for s in suffix {
+                if finished {
+                    continue
+                }
+
+                for payload in payloads {
+        
+                    finPayload = sprintf("%v%v%v", p, payload, s)
+                    info(finPayload)
+                    info(payload)
+                    rsp := i.Fuzz(finPayload).ExecFirst()~
+                    _, body = poc.Split(rsp.ResponseRaw)
+                    bodyStr = string(body)
+                    if bodyStr.Contains(token) && !bodyStr.Contains(token+","+token + "," +token) {
+                        info("Xpath Checking 生效了，Payload 为：" + finPayload)
+                        count = payload.Count(",") + 1
+                        risk.NewRisk(
+                            url, 
+                            risk.title(f" Xpath Injection Columns[${count}] For: ${url}"),
+                            risk.title(f"Xpath注入（）列数[${count}] URL: ${url}"),
+                            risk.type("Xpathinjection"),
+                            risk.severity("high"),
+                            risk.request(rsp.RequestRaw),
+                            risk.response(rsp.ResponseRaw),
+                            risk.payload(finPayload),
+                            risk.details("通过万能密码测试"),
+                        )
+                        finished = true
+                    }
+                }
+            }
+        }
+    }
+}
+
+# mirrorNewWebsitePathParams 每新出现一个网站路径且带有一些参数，参数通过常见位置和参数名去重，去重的第一个 HTTPFlow 在这里被调用
+mirrorNewWebsitePathParams = func(isHttps /*bool*/, url /*string*/, req /*[]byte*/, rsp /*[]byte*/, body /*[]byte*/) {
+    xpathInjectionChecking(isHttps, req)
+}
